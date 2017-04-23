@@ -1,14 +1,11 @@
 <?php
-
 /*
 Plugin Name: WP Front End Login
 Plugin URI: https://github.com/bradmkjr/wp-front-end-login
 Description: Does some stuff to make front end login work.
-Version: 1.1.2
+Version: 1.2.2
 Author: Bradford Knowlton
 Author URI: http://bradknowlton.com
-Text Domain: wpfel
-Domain Path: /languages
 License:     GNU General Public License v2.0
 License URI: https://github.com/bradmkjr/wp-front-end-login/blob/master/LICENSE
 */
@@ -17,7 +14,31 @@ if( ! class_exists('WPFrontEndLogin') ){
 
 	class WPFrontEndLogin {
 	
-		public $args = array( 'action', 'registration', 'checkemail', '_wpnonce', 'loggedout', 'error', 'redirect_to' );
+		private $args = array( 'action', 'registration', 'checkemail', '_wpnonce', 'loggedout', 'error', 'redirect_to' );
+	
+		private $wp_error;
+		
+		private $error;
+		
+		private $errors;
+		
+		private $interim_login;
+		
+		private $action;
+		
+		private $message;
+		
+		private $redirect_to;
+		
+		private $rp_key;
+		
+		private $user_login;
+		
+		private $user_email;
+		
+		private $input_id;
+	
+		private $aria_describedby_error;
 	
 	    public function __construct()
 	    {
@@ -59,6 +80,9 @@ if( ! class_exists('WPFrontEndLogin') ){
 	    
 	    }
 	    
+	    /*
+	    * block access to dashboard for all logged in users without admin privilages
+	    */
 	    public function init() {
 			if ( is_admin() && ! current_user_can( 'administrator' ) &&
 				! ( defined( 'DOING_AJAX' ) && DOING_AJAX ) ) {
@@ -67,9 +91,8 @@ if( ! class_exists('WPFrontEndLogin') ){
 			}
 		}
 	    
+	    /* LoginForm shortcode function */
 	    public function loginForm(){
-	    
-	    	global $wp_error, $error, $errors, $interim_login, $action, $message, $redirect_to, $rp_key;
 	    
 	    	/**
 			 * Filters the message to display above the login form.
@@ -78,36 +101,36 @@ if( ! class_exists('WPFrontEndLogin') ){
 			 *
 			 * @param string $message Login message text.
 			 */
-			$message = apply_filters( 'login_message', $message );
+			$message = apply_filters( 'login_message', $this->message );
 			if ( !empty( $message ) )
 				echo $message . "\n";
 		
-			if ( empty($wp_error) )
-				$wp_error = new WP_Error();
+			if ( empty( $this->wp_error ) )
+				$this->wp_error = new WP_Error();
 				
-			if( is_wp_error($errors) ){
-				$wp_error = $errors;
+			if( is_wp_error( $this->errors ) ){
+				$this->wp_error = $this->errors;
 			}	
 		
 			// In case a plugin uses $error rather than the $wp_errors object
-			if ( !empty( $error ) ) {
-				$wp_error->add('error', $error);
-				unset($error);
+			if ( !empty( $this->error ) ) {
+				$this->wp_error->add('error', $this->error);
+				unset($this->error);
 			}
 			
-			if ( $wp_error->get_error_code() ) {
-				$errors = '';
-				$messages = '';
-				foreach ( $wp_error->get_error_codes() as $code ) {
-					$severity = $wp_error->get_error_data( $code );
-					foreach ( $wp_error->get_error_messages( $code ) as $error_message ) {
+			if ( $this->wp_error->get_error_code() ) {
+				$this->errors = '';
+				$this->messages = '';
+				foreach ( $this->wp_error->get_error_codes() as $code ) {
+					$severity = $this->wp_error->get_error_data( $code );
+					foreach ( $this->wp_error->get_error_messages( $code ) as $error_message ) {
 						if ( 'message' == $severity )
-							$messages .= '	' . $error_message . "<br />\n";
+							$this->messages .= '	' . $error_message . "<br />\n";
 						else
-							$errors .= '	' . $error_message . "<br />\n";
+							$this->errors .= '	' . $error_message . "<br />\n";
 					}
 				}
-				if ( ! empty( $errors ) ) {
+				if ( ! empty( $this->errors ) ) {
 					/**
 					 * Filters the error messages displayed above the login form.
 					 *
@@ -115,9 +138,9 @@ if( ! class_exists('WPFrontEndLogin') ){
 					 *
 					 * @param string $errors Login error message.
 					 */
-					$output .= '<div id="login_error">' . apply_filters( 'login_errors', $errors ) . "</div>\n";
+					$output .= '<div id="login_error">' . apply_filters( 'login_errors', $this->errors ) . "</div>\n";
 				}
-				if ( ! empty( $messages ) ) {
+				if ( ! empty( $this->messages ) ) {
 					/**
 					 * Filters instructional messages displayed above the login form.
 					 *
@@ -125,11 +148,11 @@ if( ! class_exists('WPFrontEndLogin') ){
 					 *
 					 * @param string $messages Login messages.
 					 */
-					$output .= '<p class="message">' . apply_filters( 'login_messages', $messages ) . "</p>\n";
+					$output .= '<p class="message">' . apply_filters( 'login_messages', $this->messages ) . "</p>\n";
 				}
 			}
 			
-			switch ($action) {
+			switch ($this->action) {
 
 			case 'lostpassword' :
 			case 'retrievepassword' :
@@ -141,7 +164,7 @@ if( ! class_exists('WPFrontEndLogin') ){
 			<form name="lostpasswordform" id="lostpasswordform" action="<?php echo esc_url( network_site_url( 'wp-login.php?action=lostpassword', 'login_post' ) ); ?>" method="post">
 				<p>
 					<label for="user_login" ><?php _e( 'Username or Email Address' ); ?><br />
-					<input type="text" name="user_login" id="user_login" class="input" value="<?php echo esc_attr($user_login); ?>" size="20" /></label>
+					<input type="text" name="user_login" id="user_login" class="input" value="<?php echo esc_attr($this->user_login); ?>" size="20" /></label>
 				</p>
 				<?php
 				/**
@@ -150,7 +173,7 @@ if( ! class_exists('WPFrontEndLogin') ){
 				 * @since 2.1.0
 				 */
 				do_action( 'lostpassword_form' ); ?>
-				<input type="hidden" name="redirect_to" value="<?php echo esc_attr( $redirect_to ); ?>" />
+				<input type="hidden" name="redirect_to" value="<?php echo esc_attr( $this->redirect_to ); ?>" />
 				<p class="submit"><input type="submit" name="wp-submit" id="wp-submit" class="button button-primary button-large" value="<?php esc_attr_e('Get New Password'); ?>" /></p>
 			</form>
 			
@@ -171,7 +194,7 @@ if( ! class_exists('WPFrontEndLogin') ){
 	    	$output .= ob_get_contents();
 			ob_end_clean();
 			
-			$input_id = 'user_login';
+			$this->input_id = 'user_login';
 	    	
 	    	break;
 	    	
@@ -182,7 +205,7 @@ if( ! class_exists('WPFrontEndLogin') ){
 		    	
 				?>
 				<form name="resetpassform" id="resetpassform" action="<?php echo esc_url( network_site_url( 'wp-login.php?action=resetpass', 'login_post' ) ); ?>" method="post" autocomplete="off">
-					<input type="hidden" id="user_login" value="<?php echo esc_attr( $rp_login ); ?>" autocomplete="off" />
+					<input type="hidden" id="user_login" value="<?php echo esc_attr( $this->rp_login ); ?>" autocomplete="off" />
 				
 					<div class="user-pass1-wrap">
 						<p>
@@ -215,7 +238,7 @@ if( ! class_exists('WPFrontEndLogin') ){
 					 */
 					do_action( 'resetpass_form', $user );
 					?>
-					<input type="hidden" name="rp_key" value="<?php echo esc_attr( $rp_key ); ?>" />
+					<input type="hidden" name="rp_key" value="<?php echo esc_attr( $this->rp_key ); ?>" />
 					<p class="submit"><input type="submit" name="wp-submit" id="wp-submit" class="button button-primary button-large" value="<?php esc_attr_e('Reset Password'); ?>" /></p>
 				</form>
 				
@@ -236,7 +259,7 @@ if( ! class_exists('WPFrontEndLogin') ){
 				$output .= ob_get_contents();
 				ob_end_clean();
 				
-				$input_id = 'user_pass';
+				$this->input_id = 'user_pass';
 	    	
 			break; // end reset pass
 			
@@ -249,11 +272,11 @@ if( ! class_exists('WPFrontEndLogin') ){
 			<form name="registerform" id="registerform" action="<?php echo esc_url( site_url( 'wp-login.php?action=register', 'login_post' ) ); ?>" method="post" novalidate="novalidate">
 				<p>
 					<label for="user_login"><?php _e('Username') ?><br />
-					<input type="text" name="user_login" id="user_login" class="input" value="<?php echo esc_attr(wp_unslash($user_login)); ?>" size="20" /></label>
+					<input type="text" name="user_login" id="user_login" class="input" value="<?php echo esc_attr( wp_unslash( $this->user_login ) ); ?>" size="20" /></label>
 				</p>
 				<p>
 					<label for="user_email"><?php _e('Email') ?><br />
-					<input type="email" name="user_email" id="user_email" class="input" value="<?php echo esc_attr( wp_unslash( $user_email ) ); ?>" size="25" /></label>
+					<input type="email" name="user_email" id="user_email" class="input" value="<?php echo esc_attr( wp_unslash( $this->user_email ) ); ?>" size="25" /></label>
 				</p>
 				<?php
 				/**
@@ -265,7 +288,7 @@ if( ! class_exists('WPFrontEndLogin') ){
 				?>
 				<p id="reg_passmail"><?php _e( 'Registration confirmation will be emailed to you.' ); ?></p>
 				<br class="clear" />
-				<input type="hidden" name="redirect_to" value="<?php echo esc_attr( $redirect_to ); ?>" />
+				<input type="hidden" name="redirect_to" value="<?php echo esc_attr( $this->redirect_to ); ?>" />
 				<p class="submit"><input type="submit" name="wp-submit" id="wp-submit" class="button button-primary button-large" value="<?php esc_attr_e('Register'); ?>" /></p>
 			</form>
 			
@@ -279,7 +302,7 @@ if( ! class_exists('WPFrontEndLogin') ){
 			$output .= ob_get_contents();
 			ob_end_clean();
 			
-			$input_id = 'user_login';
+			$this->input_id = 'user_login';
 	    	
 	    	break;
 	    	
@@ -292,11 +315,11 @@ if( ! class_exists('WPFrontEndLogin') ){
 			<form name="loginform" id="loginform" action="<?php echo esc_url( site_url( 'wp-login.php', 'login_post' ) ); ?>" method="post">
 				<p>
 					<label for="user_login"><?php _e( 'Username or Email Address' ); ?><br />
-					<input type="text" name="log" id="user_login"<?php echo $aria_describedby_error; ?> class="input" value="<?php echo esc_attr( $user_login ); ?>" size="20" /></label>
+					<input type="text" name="log" id="user_login"<?php echo $this->aria_describedby_error; ?> class="input" value="<?php echo esc_attr( $this->user_login ); ?>" size="20" /></label>
 				</p>
 				<p>
 					<label for="user_pass"><?php _e( 'Password' ); ?><br />
-					<input type="password" name="pwd" id="user_pass"<?php echo $aria_describedby_error; ?> class="input" value="" size="20" /></label>
+					<input type="password" name="pwd" id="user_pass"<?php echo $this->aria_describedby_error; ?> class="input" value="" size="20" /></label>
 				</p>
 				<?php
 				/**
@@ -309,19 +332,19 @@ if( ! class_exists('WPFrontEndLogin') ){
 				<p class="forgetmenot"><label for="rememberme"><input name="rememberme" type="checkbox" id="rememberme" value="forever" <?php checked( $rememberme ); ?> /> <?php esc_html_e( 'Remember Me' ); ?></label></p>
 				<p class="submit">
 					<input type="submit" name="wp-submit" id="wp-submit" class="button button-primary button-large" value="<?php esc_attr_e('Log In'); ?>" />
-			<?php	if ( $interim_login ) { ?>
+			<?php	if ( $this->interim_login ) { ?>
 					<input type="hidden" name="interim-login" value="1" />
 			<?php	} else { ?>
-					<input type="hidden" name="redirect_to" value="<?php echo esc_attr($redirect_to); ?>" />
+					<input type="hidden" name="redirect_to" value="<?php echo esc_attr($this->redirect_to); ?>" />
 			<?php 	} ?>
-			<?php   if ( $customize_login ) : ?>
+			<?php   if ( $this->customize_login ) : ?>
 					<input type="hidden" name="customize-login" value="1" />
 			<?php   endif; ?>
 					<input type="hidden" name="testcookie" value="1" />
 				</p>
 			</form>
 			
-			<?php if ( ! $interim_login ) { ?>
+			<?php if ( ! $this->interim_login ) { ?>
 			<p id="nav">
 			<?php if ( ! isset( $_GET['checkemail'] ) || ! in_array( $_GET['checkemail'], array( 'confirm', 'newpass' ) ) ) :
 				if ( get_option( 'users_can_register' ) ) :
@@ -339,12 +362,12 @@ if( ! class_exists('WPFrontEndLogin') ){
 			<script type="text/javascript">
 			function wp_attempt_focus(){
 			setTimeout( function(){ try{
-			<?php if ( $user_login ) { ?>
+			<?php if ( $this->user_login ) { ?>
 			d = document.getElementById('user_pass');
 			d.value = '';
 			<?php } else { ?>
 			d = document.getElementById('user_login');
-			<?php if ( 'invalid_username' == $wp_error->get_error_code() ) { ?>
+			<?php if ( 'invalid_username' == $this->wp_error->get_error_code() ) { ?>
 			if( d.value != '' )
 			d.value = '';
 			<?php
@@ -356,11 +379,11 @@ if( ! class_exists('WPFrontEndLogin') ){
 			}, 200);
 			}
 			
-			<?php if ( !$error ) { ?>
+			<?php if ( !$this->error ) { ?>
 			wp_attempt_focus();
 			<?php } ?>
 			if(typeof wpOnload=='function')wpOnload();
-			<?php if ( $interim_login ) { ?>
+			<?php if ( $this->interim_login ) { ?>
 			(function(){
 			try {
 				var i, links = document.getElementsByTagName('a');
@@ -383,9 +406,9 @@ if( ! class_exists('WPFrontEndLogin') ){
 	    	
 			} // end action switch
 	        
-		    if ( !empty($input_id) ) : 
+		    if ( !empty($this->input_id) ) : 
 		    	$output .= '<script type="text/javascript">
-				try{document.getElementById("'.$input_id.'").focus();}catch(e){}
+				try{document.getElementById("'.$this->input_id.'").focus();}catch(e){}
 				if(typeof wpOnload=="function")wpOnload();
 				</script>';
 			endif;
@@ -395,25 +418,23 @@ if( ! class_exists('WPFrontEndLogin') ){
 	    
 	    public function after_setup_theme(){
 
-			global $wp_error, $error, $errors, $interim_login, $action, $message, $redirect_to, $rp_key;
-			
 			//
 			// Main
 			//
 			
 			if( isset($_REQUEST['action']) || isset($_GET['key']) || isset($_GET['registration']) || !empty($_POST['log']) || isset( $_GET['checkemail'] ) ){
 
-			$action = isset($_REQUEST['action']) ? $_REQUEST['action'] : 'login';
+			$this->action = isset($_REQUEST['action']) ? $_REQUEST['action'] : 'login';
 			
-			if ( empty($errors) )
-				$errors = new WP_Error();
+			if ( empty($this->errors) )
+				$this->errors = new WP_Error();
 			
 			if ( isset($_GET['key']) )
-				$action = 'resetpass';
+				$this->action = 'resetpass';
 			
 			// validate action so as to default to the login screen
-			if ( !in_array( $action, array( 'postpass', 'logout', 'lostpassword', 'retrievepassword', 'resetpass', 'rp', 'register', 'login' ), true ) && false === has_filter( 'login_form_' . $action ) )
-				$action = 'login';
+			if ( !in_array( $this->action, array( 'postpass', 'logout', 'lostpassword', 'retrievepassword', 'resetpass', 'rp', 'register', 'login' ), true ) && false === has_filter( 'login_form_' . $this->action ) )
+				$this->action = 'login';
 				
 			nocache_headers();
 			
@@ -452,7 +473,7 @@ if( ! class_exists('WPFrontEndLogin') ){
 			$http_post = ('POST' == $_SERVER['REQUEST_METHOD']);
 			$interim_login = isset($_REQUEST['interim-login']);
 			
-			switch ($action) {
+			switch ($this->action) {
 
 			case 'postpass' :
 				if ( ! array_key_exists( 'post_password', $_POST ) ) {
@@ -543,7 +564,7 @@ if( ! class_exists('WPFrontEndLogin') ){
 				 *
 				 * @param string $lostpassword_redirect The redirect destination URL.
 				 */
-				$redirect_to = apply_filters( 'lostpassword_redirect', $lostpassword_redirect );
+				$this->redirect_to = apply_filters( 'lostpassword_redirect', $lostpassword_redirect );
 			
 				/**
 				 * Fires before the lost password form.
@@ -554,7 +575,7 @@ if( ! class_exists('WPFrontEndLogin') ){
 			
 				/* login_header(__('Lost Password'), '<p class="message">' . __('Please enter your username or email address. You will receive a link to create a new password via email.') . '</p>', $errors); */
 			
-				$user_login = isset($_POST['user_login']) ? wp_unslash($_POST['user_login']) : '';
+				$this->user_login = isset($_POST['user_login']) ? wp_unslash($_POST['user_login']) : '';
 			
 				// login_footer('user_login');
 				
@@ -573,9 +594,9 @@ if( ! class_exists('WPFrontEndLogin') ){
 				}
 				
 				if ( isset( $_COOKIE[ $rp_cookie ] ) && 0 < strpos( $_COOKIE[ $rp_cookie ], ':' ) ) {
-					list( $rp_login, $rp_key ) = explode( ':', wp_unslash( $_COOKIE[ $rp_cookie ] ), 2 );
-					$user = check_password_reset_key( $rp_key, $rp_login );
-					if ( isset( $_POST['pass1'] ) && ! hash_equals( $rp_key, $_POST['rp_key'] ) ) {
+					list( $this->rp_login, $this->rp_key ) = explode( ':', wp_unslash( $_COOKIE[ $rp_cookie ] ), 2 );
+					$user = check_password_reset_key( $this->rp_key, $this->rp_login );
+					if ( isset( $_POST['pass1'] ) && ! hash_equals( $this->rp_key, $_POST['rp_key'] ) ) {
 						$user = false;
 					}
 				} else {
@@ -591,10 +612,10 @@ if( ! class_exists('WPFrontEndLogin') ){
 					exit;
 				}
 			
-				$errors = new WP_Error();
+				$this->errors = new WP_Error();
 			
 				if ( isset($_POST['pass1']) && $_POST['pass1'] != $_POST['pass2'] )
-					$errors->add( 'password_reset_mismatch', __( 'The passwords do not match.' ) );
+					$this->errors->add( 'password_reset_mismatch', __( 'The passwords do not match.' ) );
 			
 				/**
 				 * Fires before the password reset procedure is validated.
@@ -604,17 +625,15 @@ if( ! class_exists('WPFrontEndLogin') ){
 				 * @param object           $errors WP Error object.
 				 * @param WP_User|WP_Error $user   WP_User object if the login and reset key match. WP_Error object otherwise.
 				 */
-				do_action( 'validate_password_reset', $errors, $user );
+				do_action( 'validate_password_reset', $this->errors, $user );
 			
-				if ( ( ! $errors->get_error_code() ) && isset( $_POST['pass1'] ) && !empty( $_POST['pass1'] ) ) {
+				if ( ( ! $this->errors->get_error_code() ) && isset( $_POST['pass1'] ) && !empty( $_POST['pass1'] ) ) {
 					reset_password($user, $_POST['pass1']);
 					setcookie( $rp_cookie, ' ', time() - YEAR_IN_SECONDS, $rp_path, COOKIE_DOMAIN, is_ssl(), true );
 					// login_header( __( 'Password Reset' ), '<p class="message reset-pass">' . __( 'Your password has been reset.' ) . ' <a href="' . esc_url( wp_login_url() ) . '">' . __( 'Log in' ) . '</a></p>' );
 					// login_footer();
 					
-					$title = __( 'Password Reset' );
-					
-					$message = '<p class="message reset-pass">' . __( 'Your password has been reset.' ) . ' <a href="' . esc_url( wp_login_url() ) . '">' . __( 'Log in' ) . '</a></p>';
+					$this->message = '<p class="message reset-pass">' . __( 'Your password has been reset.' ) . ' <a href="' . esc_url( wp_login_url() ) . '">' . __( 'Log in' ) . '</a></p>';
 					
 					return;
 					exit;
@@ -648,15 +667,15 @@ if( ! class_exists('WPFrontEndLogin') ){
 					exit();
 				}
 			
-				$user_login = '';
-				$user_email = '';
+				$this->user_login = '';
+				$this->user_email = '';
 				if ( $http_post ) {
-					$user_login = isset( $_POST['user_login'] ) ? $_POST['user_login'] : '';
-					$user_email = isset( $_POST['user_email'] ) ? $_POST['user_email'] : '';
-					$errors = register_new_user($user_login, $user_email);
-					if ( !is_wp_error($errors) ) {
-						$redirect_to = !empty( $_POST['redirect_to'] ) ? $_POST['redirect_to'] : 'wp-login.php?checkemail=registered';
-						wp_safe_redirect( $redirect_to );
+					$this->user_login = isset( $_POST['user_login'] ) ? $_POST['user_login'] : '';
+					$this->user_email = isset( $_POST['user_email'] ) ? $_POST['user_email'] : '';
+					$this->errors = register_new_user($this->user_login, $this->user_email);
+					if ( !is_wp_error($this->errors) ) {
+						$this->redirect_to = !empty( $_POST['redirect_to'] ) ? $_POST['redirect_to'] : 'wp-login.php?checkemail=registered';
+						wp_safe_redirect( $this->redirect_to );
 						exit();
 					}
 				}
@@ -669,7 +688,7 @@ if( ! class_exists('WPFrontEndLogin') ){
 				 *
 				 * @param string $registration_redirect The redirect destination URL.
 				 */
-				$redirect_to = apply_filters( 'registration_redirect', $registration_redirect );
+				$this->redirect_to = apply_filters( 'registration_redirect', $registration_redirect );
 				
 				// login_header(__('Registration Form'), '<p class="message register">' . __('Register For This Site') . '</p>', $errors);
 						
@@ -687,11 +706,11 @@ if( ! class_exists('WPFrontEndLogin') ){
 			
 				// If the user wants ssl but the session is not ssl, force a secure cookie.
 				if ( !empty($_POST['log']) && !force_ssl_admin() ) {
-					$user_name = sanitize_user($_POST['log']);
-					$user = get_user_by( 'login', $user_name );
+					$this->user_name = sanitize_user($_POST['log']);
+					$user = get_user_by( 'login', $this->user_name );
 			
-					if ( ! $user && strpos( $user_name, '@' ) ) {
-						$user = get_user_by( 'email', $user_name );
+					if ( ! $user && strpos( $this->user_name, '@' ) ) {
+						$user = get_user_by( 'email', $this->user_name );
 					}
 			
 					if ( $user ) {
@@ -703,12 +722,12 @@ if( ! class_exists('WPFrontEndLogin') ){
 				}
 				
 				if ( isset( $_REQUEST['redirect_to'] ) ) {
-					$redirect_to = $_REQUEST['redirect_to'];
+					$this->redirect_to = $_REQUEST['redirect_to'];
 					// Redirect to https if user wants ssl
-					if ( $secure_cookie && false !== strpos($redirect_to, 'wp-admin') )
-						$redirect_to = preg_replace('|^http://|', 'https://', $redirect_to);
+					if ( $secure_cookie && false !== strpos($this->redirect_to, 'wp-admin') )
+						$this->redirect_to = preg_replace('|^http://|', 'https://', $this->redirect_to);
 				} else {
-					$redirect_to = admin_url();
+					$this->redirect_to = admin_url();
 				}
 			
 				$reauth = empty($_REQUEST['reauth']) ? false : true;
@@ -738,12 +757,12 @@ if( ! class_exists('WPFrontEndLogin') ){
 				 * @param string           $requested_redirect_to The requested redirect destination URL passed as a parameter.
 				 * @param WP_User|WP_Error $user                  WP_User object if login was successful, WP_Error object otherwise.
 				 */
-				$redirect_to = apply_filters( 'login_redirect', $redirect_to, $requested_redirect_to, $user );
+				$this->redirect_to = apply_filters( 'login_redirect', $redirect_to, $requested_redirect_to, $user );
 				
 				if ( !is_wp_error($user) && !$reauth ) {
-					if ( $interim_login ) {
-						$message = '<p class="message">' . __('You have logged in successfully.') . '</p>';
-						$interim_login = 'success';
+					if ( $this->interim_login ) {
+						$this->message = '<p class="message">' . __('You have logged in successfully.') . '</p>';
+						$this->interim_login = 'success';
 						// login_header( '', $message ); ?>
 						</div>
 						<?php
@@ -756,47 +775,47 @@ if( ! class_exists('WPFrontEndLogin') ){
 			<?php		exit;
 					}
 			
-					if ( ( empty( $redirect_to ) || $redirect_to == 'wp-admin/' || $redirect_to == admin_url() ) ) {
+					if ( ( empty( $this->redirect_to ) || $this->redirect_to == 'wp-admin/' || $this->redirect_to == admin_url() ) ) {
 						// If the user doesn't belong to a blog, send them to user admin. If the user can't edit posts, send them to their profile.
 						if ( is_multisite() && !get_active_blog_for_user($user->ID) && !is_super_admin( $user->ID ) )
-							$redirect_to = user_admin_url();
+							$this->redirect_to = user_admin_url();
 						elseif ( is_multisite() && !$user->has_cap('read') )
-							$redirect_to = get_dashboard_url( $user->ID );
+							$this->redirect_to = get_dashboard_url( $user->ID );
 						elseif ( !$user->has_cap('edit_posts') )
-							$redirect_to = $user->has_cap( 'read' ) ? admin_url( 'profile.php' ) : home_url();
+							$this->redirect_to = $user->has_cap( 'read' ) ? admin_url( 'profile.php' ) : home_url();
 			
-						wp_redirect( $redirect_to );
+						wp_redirect( $this->redirect_to );
 						exit();
 					}
 					
-					wp_safe_redirect($redirect_to);
+					wp_safe_redirect($this->redirect_to);
 					exit();
 				}
 			
 				
-				$errors = $user;
+				$this->errors = $user;
 				
 				// Clear errors if loggedout is set.
 				if ( !empty($_GET['loggedout']) || $reauth )
-					$errors = new WP_Error();
+					$this->errors = new WP_Error();
 			
-				if ( $interim_login ) {
-					if ( ! $errors->get_error_code() )
-						$errors->add( 'expired', __( 'Your session has expired. Please log in to continue where you left off.' ), 'message' );
+				if ( $this->interim_login ) {
+					if ( ! $this->errors->get_error_code() )
+						$this->errors->add( 'expired', __( 'Your session has expired. Please log in to continue where you left off.' ), 'message' );
 				} else {
 					// Some parts of this script use the main login form to display a message
 					if		( isset($_GET['loggedout']) && true == $_GET['loggedout'] )
-						$errors->add('loggedout', __('You are now logged out.'), 'message');
+						$this->errors->add('loggedout', __('You are now logged out.'), 'message');
 					elseif	( isset($_GET['registration']) && 'disabled' == $_GET['registration'] )
-						$errors->add('registerdisabled', __('User registration is currently not allowed.'));
+						$this->errors->add('registerdisabled', __('User registration is currently not allowed.'));
 					elseif	( isset($_GET['checkemail']) && 'confirm' == $_GET['checkemail'] )
-						$errors->add('confirm', __('Check your email for the confirmation link.'), 'message');
+						$this->errors->add('confirm', __('Check your email for the confirmation link.'), 'message');
 					elseif	( isset($_GET['checkemail']) && 'newpass' == $_GET['checkemail'] )
-						$errors->add('newpass', __('Check your email for your new password.'), 'message');
+						$this->errors->add('newpass', __('Check your email for your new password.'), 'message');
 					elseif	( isset($_GET['checkemail']) && 'registered' == $_GET['checkemail'] )
-						$errors->add('registered', __('Registration complete. Please check your email.'), 'message');
+						$this->errors->add('registered', __('Registration complete. Please check your email.'), 'message');
 					elseif ( strpos( $redirect_to, 'about.php?updated' ) )
-						$errors->add('updated', __( '<strong>You have successfully updated WordPress!</strong> Please log back in to see what&#8217;s new.' ), 'message' );
+						$this->errors->add('updated', __( '<strong>You have successfully updated WordPress!</strong> Please log back in to see what&#8217;s new.' ), 'message' );
 				}
 				
 				/**
@@ -807,9 +826,9 @@ if( ! class_exists('WPFrontEndLogin') ){
 				 * @param object $errors      WP Error object.
 				 * @param string $redirect_to Redirect destination URL.
 				 */
-				$errors = apply_filters( 'wp_login_errors', $errors, $redirect_to );
+				$this->errors = apply_filters( 'wp_login_errors', $this->errors, $redirect_to );
 				
-				$wp_error = $errors;
+				$this->wp_error = $this->errors;
 				
 				// Clear any stale cookies.
 				if ( $reauth )
@@ -818,13 +837,13 @@ if( ! class_exists('WPFrontEndLogin') ){
 				// login_header(__('Log In'), '', $errors);
 				
 				if ( isset($_POST['log']) )
-					$user_login = ( 'incorrect_password' == $errors->get_error_code() || 'empty_password' == $errors->get_error_code() ) ? esc_attr(wp_unslash($_POST['log'])) : '';
+					$this->user_login = ( 'incorrect_password' == $this->errors->get_error_code() || 'empty_password' == $this->errors->get_error_code() ) ? esc_attr(wp_unslash($_POST['log'])) : '';
 				$rememberme = ! empty( $_POST['rememberme'] );
 			
-				if ( ! empty( $errors->errors ) ) {
-					$aria_describedby_error = ' aria-describedby="login_error"';
+				if ( ! empty( $this->errors->errors ) ) {
+					$this->aria_describedby_error = ' aria-describedby="login_error"';
 				} else {
-					$aria_describedby_error = '';
+					$this->aria_describedby_error = '';
 				}
 			
 			// login_footer();
@@ -833,8 +852,8 @@ if( ! class_exists('WPFrontEndLogin') ){
 			
 			} // end action switch
 
-	    	if ( empty($wp_error) )
-				$wp_error = new WP_Error();
+	    	if ( empty($this->wp_error) )
+				$this->wp_error = new WP_Error();
 
 		    // Shake it!
 			$shake_error_codes = array( 'empty_password', 'empty_email', 'invalid_email', 'invalidcombo', 'empty_username', 'invalid_username', 'incorrect_password' );
@@ -847,7 +866,7 @@ if( ! class_exists('WPFrontEndLogin') ){
 			 */
 			$shake_error_codes = apply_filters( 'shake_error_codes', $shake_error_codes );
 		
-			if ( $shake_error_codes && $wp_error->get_error_code() && in_array( $wp_error->get_error_code(), $shake_error_codes ) )
+			if ( $shake_error_codes && $this->wp_error->get_error_code() && in_array( $this->wp_error->get_error_code(), $shake_error_codes ) )
 				add_action( 'login_head', 'wp_shake_js', 12 );
 		
 			$separator = is_rtl() ? ' &rsaquo; ' : ' &lsaquo; ';
@@ -885,17 +904,15 @@ if( ! class_exists('WPFrontEndLogin') ){
 	    
 	    public function wp_head(){
 	    
-	    	global $wp_error, $error, $errors, $interim_login, $action, $classes, $redirect_to, $rp_key;
-		    
-		    if ( empty($wp_error) )
-				$wp_error = new WP_Error();
+	    	if ( empty($this->wp_error) )
+				$this->wp_error = new WP_Error();
 			
 	    	/*
 			 * Remove all stored post data on logging out.
 			 * This could be added by add_action('login_head'...) like wp_shake_js(),
 			 * but maybe better if it's not removable by plugins
 			 */
-			if ( 'loggedout' == $wp_error->get_error_code() ) {
+			if ( 'loggedout' == $this->wp_error->get_error_code() ) {
 				?>
 				<script>if("sessionStorage" in window){try{for(var key in sessionStorage){if(key.indexOf("wp-autosave-")!=-1){sessionStorage.removeItem(key)}}}catch(e){}};</script>
 				<?php
@@ -916,19 +933,19 @@ if( ! class_exists('WPFrontEndLogin') ){
 			 */
 			do_action( 'login_head' );
 			
-			$classes = array( 'login-action-' . $action, 'wp-core-ui' );
+			$this->classes = array( 'login-action-' . $this->action, 'wp-core-ui' );
 			if ( is_rtl() )
-				$classes[] = 'rtl';
-			if ( $interim_login ) {
-				$classes[] = 'interim-login';
+				$this->classes[] = 'rtl';
+			if ( $this->interim_login ) {
+				$this->classes[] = 'interim-login';
 				?>
 				<style type="text/css">html{background-color: transparent;}</style>
 				<?php
 		
-				if ( 'success' ===  $interim_login )
-					$classes[] = 'interim-login-success';
+				if ( 'success' ===  $this->interim_login )
+					$this->classes[] = 'interim-login-success';
 			}
-			$classes[] =' locale-' . sanitize_html_class( strtolower( str_replace( '_', '-', get_locale() ) ) );			
+			$this->classes[] =' locale-' . sanitize_html_class( strtolower( str_replace( '_', '-', get_locale() ) ) );			
 			
 			/**
 			 * Filters the login page body classes.
@@ -940,15 +957,13 @@ if( ! class_exists('WPFrontEndLogin') ){
 			 */
 			$classes = apply_filters( 'login_body_class', $classes, $action );
 
-			add_filter( 'body_class', function( $body_classes ) {
-				global $classes;
-			    return array_merge( $body_classes, $classes );
-			} );
-			
-			
+			add_filter( 'body_class', array( $this, 'body_classes') );
 				    
 	    }// end wp_head()
 	    
+	    public function body_classes( $body_classes ) {
+				return array_merge( $body_classes, $this->classes );
+			}
 	    
 	    public function site_url( $url, $path, $scheme, $blog_id ){
 	    
@@ -1293,7 +1308,7 @@ if( ! function_exists( 'retrieve_password' )){
 }
 
 
-add_filter( 'wp_nav_menu_items', 'wti_loginout_menu_link', 10, 2 );
+// add_filter( 'wp_nav_menu_items', 'wti_loginout_menu_link', 10, 2 );
 
 function wti_loginout_menu_link( $items, $args ) {
    // if ($args->theme_location == 'primary') {
