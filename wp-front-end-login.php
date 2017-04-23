@@ -3,7 +3,7 @@
 Plugin Name: WP Front End Login
 Plugin URI: https://github.com/bradmkjr/wp-front-end-login
 Description: Does some stuff to make front end login work.
-Version: 1.2.2
+Version: 1.2.3
 Author: Bradford Knowlton
 Author URI: http://bradknowlton.com
 License:     GNU General Public License v2.0
@@ -13,6 +13,8 @@ License URI: https://github.com/bradmkjr/wp-front-end-login/blob/master/LICENSE
 if( ! class_exists('WPFrontEndLogin') ){
 
 	class WPFrontEndLogin {
+	
+		// Setup private variables to pass values from after_theme_setup function to shortcode
 	
 		private $args = array( 'action', 'registration', 'checkemail', '_wpnonce', 'loggedout', 'error', 'redirect_to' );
 	
@@ -39,6 +41,8 @@ if( ! class_exists('WPFrontEndLogin') ){
 		private $input_id;
 	
 		private $aria_describedby_error;
+		
+		private $rememberme;
 	
 	    public function __construct()
 	    {
@@ -158,9 +162,7 @@ if( ! class_exists('WPFrontEndLogin') ){
 			case 'retrievepassword' :
 	    	
 	    	ob_start();
-	    	
 	    	?>
-			
 			<form name="lostpasswordform" id="lostpasswordform" action="<?php echo esc_url( network_site_url( 'wp-login.php?action=lostpassword', 'login_post' ) ); ?>" method="post">
 				<p>
 					<label for="user_login" ><?php _e( 'Username or Email Address' ); ?><br />
@@ -188,9 +190,7 @@ if( ! class_exists('WPFrontEndLogin') ){
 			endif;
 			?>
 			</p>
-			
 			<?php
-	    	
 	    	$output .= ob_get_contents();
 			ob_end_clean();
 			
@@ -202,8 +202,7 @@ if( ! class_exists('WPFrontEndLogin') ){
 			case 'rp' :	
 		    
 		    ob_start();
-		    	
-				?>
+		    	?>
 				<form name="resetpassform" id="resetpassform" action="<?php echo esc_url( network_site_url( 'wp-login.php?action=resetpass', 'login_post' ) ); ?>" method="post" autocomplete="off">
 					<input type="hidden" id="user_login" value="<?php echo esc_attr( $this->rp_login ); ?>" autocomplete="off" />
 				
@@ -329,7 +328,7 @@ if( ! class_exists('WPFrontEndLogin') ){
 				 */
 				do_action( 'login_form' );
 				?>
-				<p class="forgetmenot"><label for="rememberme"><input name="rememberme" type="checkbox" id="rememberme" value="forever" <?php checked( $rememberme ); ?> /> <?php esc_html_e( 'Remember Me' ); ?></label></p>
+				<p class="forgetmenot"><label for="rememberme"><input name="rememberme" type="checkbox" id="rememberme" value="forever" <?php checked( $this->rememberme ); ?> /> <?php esc_html_e( 'Remember Me' ); ?></label></p>
 				<p class="submit">
 					<input type="submit" name="wp-submit" id="wp-submit" class="button button-primary button-large" value="<?php esc_attr_e('Log In'); ?>" />
 			<?php	if ( $this->interim_login ) { ?>
@@ -838,7 +837,7 @@ if( ! class_exists('WPFrontEndLogin') ){
 				
 				if ( isset($_POST['log']) )
 					$this->user_login = ( 'incorrect_password' == $this->errors->get_error_code() || 'empty_password' == $this->errors->get_error_code() ) ? esc_attr(wp_unslash($_POST['log'])) : '';
-				$rememberme = ! empty( $_POST['rememberme'] );
+				$this->rememberme = ! empty( $_POST['rememberme'] );
 			
 				if ( ! empty( $this->errors->errors ) ) {
 					$this->aria_describedby_error = ' aria-describedby="login_error"';
