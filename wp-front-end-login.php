@@ -3,7 +3,7 @@
 Plugin Name: WP Front End Login
 Plugin URI: https://github.com/bradmkjr/wp-front-end-login
 Description: Does some stuff to make front end login work.
-Version: 1.2.3
+Version: 1.3.1
 Author: Bradford Knowlton
 Author URI: http://bradknowlton.com
 License:     GNU General Public License v2.0
